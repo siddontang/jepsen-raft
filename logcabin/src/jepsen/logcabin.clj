@@ -98,6 +98,10 @@
             (info node "set up")
             (install! node)
             (configure! node)
+            
+            ; Remove log file first.
+            (c/exec :rm :-rf log-file)
+            
             (when (= node :n1)
               (bootstrap! node))
             
@@ -106,10 +110,9 @@
     
     (teardown! [_ test node]
                (stop! node)
-               
+                
                (c/su 
-                 (c/exec :rm :-rf store-dir)
-                 (c/exec :rm :-rf log-file))
+                 (c/exec :rm :-rf store-dir))
                
                (info node "tore down"))))
 
