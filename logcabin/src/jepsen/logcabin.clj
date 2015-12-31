@@ -144,19 +144,13 @@
                
                (info node "tore down"))))
 
-(defn logcabin-set! 
-  "Set a value for path"
-  [node path value]
-  (c/on node 
-        (c/su 
-          (c/cd "/root"
-                (c/exec :echo :-n value | 
-                        "/root/TreeOps"
-                        :-c server-addrs
-                        :-q
-                        :-t 1
-                        :write
-                        (c/lit path))))))
+(def cas-msg-pattern
+  (re-pattern "Exiting due to LogCabin::Client::Exception: Path '.*' has value '.*', not '.*' as required"))
+
+(def timeout-msg-pattern
+  (re-pattern "Exiting due to LogCabin::Client::Exception: Client-specified timeout elapsed"))
+
+(def op-timeout 3)
 
 (defn logcabin-get! 
   "get a value for path"
@@ -167,10 +161,23 @@
                 (c/exec "/root/TreeOps"
                         :-c server-addrs
                         :-q
-                        :-t 1
+                        :-t op-timeout
                         :read
                         (c/lit path))))))
 
+(defn logcabin-set! 
+  "Set a value for path"
+  [node path value]
+  (c/on node 
+        (c/su 
+          (c/cd "/root"
+                (c/exec :echo :-n value | 
+                        "/root/TreeOps"
+                        :-c server-addrs
+                        :-q
+                        :-t op-timeout
+                        :write
+                        (c/lit path))))))
 
 (defn logcabin-cas!
   "Set value2 for path if old value is value1"
@@ -184,12 +191,13 @@
                           :-c server-addrs
                           :-q
                           :-p (c/lit (str path ":" value1))
-                          :-t 1
+                          :-t op-timeout
                           :write
                           (c/lit path)))))
     (catch Exception e
-      ; Here we treat every error as CAS false.
-      false)))
+      (if (re-matches cas-msg-pattern (str/trim (.getMessage e)))
+        false
+        (throw e)))))
 
 
 (defrecord CASClient [k client]
@@ -200,24 +208,27 @@
             (assoc this :client node)))
   
   (invoke! [this test op]
-           (case (:f op)
-             :read  (try (let [resp (logcabin-get! client k)]
-                           (assoc op :type :ok :value resp))
-                      (catch Exception e
-                        ; Since reads don't have side effects, we can always
-                        ; pretend they didn't happen.
-                        (assoc op :type :fail)))
-             
-             :write (do (->> (:value op)
-                             json/generate-string
-                             (logcabin-set! client k))
-                      (assoc op :type :ok))
-             
-             :cas   (let [[value value'] (:value op)
-                          ok?            (logcabin-cas! client k
-                                                        (json/generate-string value)
-                                                        (json/generate-string value'))]
-                      (assoc op :type (if ok? :ok :fail)))))
+           (try
+             (case (:f op)  
+               :read  (let [resp (-> client
+                                     (logcabin-get! k)
+                                     (json/parse-string true))]
+                        (assoc op :type :ok :value resp))
+               :write (do (->> (:value op)
+                               json/generate-string
+                               (logcabin-set! client k))
+                        (assoc op :type :ok))
+               
+               :cas   (let [[value value'] (:value op)
+                            ok?            (logcabin-cas! client k
+                                                          (json/generate-string value)
+                                                          (json/generate-string value'))]
+                        (assoc op :type (if ok? :ok :fail))))
+             (catch Exception e
+               (let [msg (str/trim (.getMessage e))]
+                 (cond 
+                   (re-matches timeout-msg-pattern msg) (assoc op :type :fail :value :timed-out)
+                   :else (throw e))))))
   
   (teardown! [_ test]))
 
