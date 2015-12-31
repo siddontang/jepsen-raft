@@ -58,6 +58,9 @@
 (def pid-file "/root/logcabin.pid")
 (def store-dir "/root/storage")
 (def server-addrs "n1:5254,n2:5254,n3:5254,n4:5254,n5:5254")
+(def logcabin-bin "/root/LogCabin")
+(def reconfigure-bin "/root/Reconfigure")
+(def treeops-bin "/root/TreeOps")
 
 (defn configure!
   "Configure logcabin"
@@ -78,7 +81,7 @@
   (info node "bootstrapping logcabin")
   (c/su
     (c/cd "/root"
-          (c/exec "/root/LogCabin" :-c config-file :-l log-file :--bootstrap))))
+          (c/exec logcabin-bin :-c config-file :-l log-file :--bootstrap))))
 
 (defn start!
   "Start logcabin"
@@ -86,7 +89,7 @@
   (info node "starting logcabin")
   (c/su
     (c/cd "/root"
-          (c/exec "/root/LogCabin" :-c config-file :-d :-l log-file :-p pid-file))))
+          (c/exec logcabin-bin :-c config-file :-d :-l log-file :-p pid-file))))
 
 (defn stop!
   "Stop logcabin"
@@ -102,7 +105,7 @@
   (info node "reconfiguring logcabin servers")
   (c/su
     (c/cd "/root"
-          (c/exec "/root/Reconfigure" 
+          (c/exec reconfigure-bin 
                   :-c (c/lit server-addrs)
                   :set 
                   (c/lit (server-addr :n1))
@@ -113,7 +116,7 @@
 
 (defn db
   "Sets up and tears down LogCabin"
-  [version]
+  []
   (reify db/DB
     (setup! [_ test node]
             (info node "set up")
@@ -158,7 +161,7 @@
   (c/on node
         (c/su 
           (c/cd "/root"
-                (c/exec "/root/TreeOps"
+                (c/exec treeops-bin
                         :-c server-addrs
                         :-q
                         :-t op-timeout
@@ -172,7 +175,7 @@
         (c/su 
           (c/cd "/root"
                 (c/exec :echo :-n value | 
-                        "/root/TreeOps"
+                        treeops-bin
                         :-c server-addrs
                         :-q
                         :-t op-timeout
@@ -187,7 +190,7 @@
           (c/su 
             (c/cd "/root"
                   (c/exec :echo :-n value2 | 
-                          "/root/TreeOps"
+                          treeops-bin
                           :-c server-addrs
                           :-q
                           :-p (c/lit (str path ":" value1))
@@ -236,11 +239,3 @@
   "A compare and set register built around a single logcabin node."
   []
   (CASClient. "/jepsen" nil))
-
-
-(defn basic-test
-  "A simple test for LogCabin."
-  [version]
-  (merge tests/noop-test
-         {:os debian/os
-          :db (db version)}))

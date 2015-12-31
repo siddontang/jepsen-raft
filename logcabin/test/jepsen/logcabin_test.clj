@@ -15,17 +15,13 @@
             [jepsen.store     :as store]
             [jepsen.report    :as report]))
 
-(def version
-  "What LogCabin version should we test?"
-  "HEAD")
-
 (deftest register-test
   (let [test (run!
                (assoc
                  noop-test
                  :name      "logcabin"
                  :os        debian/os
-                 :db        (db version)
+                 :db        (db)
                  :client    (cas-client)
                  :model     (model/cas-register)
                  :checker   (checker/compose {:html   timeline/html
