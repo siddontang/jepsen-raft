@@ -21,9 +21,9 @@
             [cheshire.core :as json]))
 
 (defn install!
-  "Install logcabin"
+  "Install LogCabin"
   [node]
-  (info node "installing logcabin")
+  (info node "installing LogCabin")
   (debian/install [:git-core
                    :protobuf-compiler
                    :libprotobuf-dev
@@ -43,7 +43,7 @@
     (c/exec :cp :-f "/logcabin/build/LogCabin" "/root")
     (c/exec :cp :-f "/logcabin/build/Examples/Reconfigure" "/root")
     (c/exec :cp :-f "/logcabin/build/Examples/TreeOps" "/root")
-    (info node "install logcabin ok")))
+    (info node "install LogCabin ok")))
 
 (defn server-id
   [node]
@@ -63,9 +63,9 @@
 (def treeops-bin "/root/TreeOps")
 
 (defn configure!
-  "Configure logcabin"
+  "Configure LogCabin"
   [node]
-  (info node "configuring logcabin")
+  (info node "configuring LogCabin")
   (c/su
     (c/exec :echo (str 
                     "serverId = " 
@@ -76,33 +76,33 @@
             :> config-file)))
 
 (defn bootstrap!
-  "bootstrap logcabin"
+  "bootstrap LogCabin"
   [node]
-  (info node "bootstrapping logcabin")
+  (info node "bootstrapping LogCabin")
   (c/su
     (c/cd "/root"
           (c/exec logcabin-bin :-c config-file :-l log-file :--bootstrap))))
 
 (defn start!
-  "Start logcabin"
+  "Start LogCabin"
   [node]
-  (info node "starting logcabin")
+  (info node "starting LogCabin")
   (c/su
     (c/cd "/root"
           (c/exec logcabin-bin :-c config-file :-d :-l log-file :-p pid-file))))
 
 (defn stop!
-  "Stop logcabin"
+  "Stop LogCabin"
   [node]
-  (info node "stopping logcabin")
+  (info node "stopping LogCabin")
   (c/su
     (cu/grepkill! :LogCabin)
     (c/exec :rm :-rf pid-file)))
 
 (defn reconfigure!
-  "Reconfigure logcabin servers"
+  "Reconfigure LogCabin servers"
   [node]
-  (info node "reconfiguring logcabin servers")
+  (info node "reconfiguring LogCabin servers")
   (c/su
     (c/cd "/root"
           (c/exec reconfigure-bin 
@@ -126,6 +126,7 @@
             ; Remove log file first.
             (c/exec :rm :-rf log-file)
             
+            ; Bootstrap in n1.
             (when (= node :n1)
               (bootstrap! node))
             
@@ -133,6 +134,7 @@
             (start! node)
             
             (jepsen/synchronize test)
+            ; Use Reconfigure tool to set up the LogCabin cluster in n1.
             (when (= node :n1)
               (reconfigure! node))
             
@@ -148,15 +150,18 @@
                (info node "tore down"))))
 
 (def cas-msg-pattern
+  "LogCabin returns following error for CAS failed"
   (re-pattern "Exiting due to LogCabin::Client::Exception: Path '.*' has value '.*', not '.*' as required"))
 
 (def timeout-msg-pattern
   (re-pattern "Exiting due to LogCabin::Client::Exception: Client-specified timeout elapsed"))
 
-(def op-timeout 3)
+(def op-timeout 
+  "Use 3s for LogCabin operation timeout"
+  3)
 
 (defn logcabin-get! 
-  "get a value for path"
+  "Get a value for path"
   [node path]
   (c/on node
         (c/su 
@@ -198,6 +203,7 @@
                           :write
                           (c/lit path)))))
     (catch Exception e
+      ; For CAS failed, we return false, otherwise, re-raise the error. 
       (if (re-matches cas-msg-pattern (str/trim (.getMessage e)))
         false
         (throw e)))))
@@ -236,6 +242,6 @@
   (teardown! [_ test]))
 
 (defn cas-client
-  "A compare and set register built around a single logcabin node."
+  "A compare and set register built around a single LogCabin node."
   []
   (CASClient. "/jepsen" nil))
